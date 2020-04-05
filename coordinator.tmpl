@@ -1,0 +1,5 @@
+# 1. Add worker node information
+
+%{ for worker in workers ~}
+sudo -i -u postgres psql -c "SELECT * from master_add_node('${worker}', 5432);"
+%{ endfor ~}

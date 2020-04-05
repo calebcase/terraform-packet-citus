@@ -1,0 +1,51 @@
+#!/bin/bash
+set -euo pipefail
+set -x
+
+# Lock down the firewall. Allow SSH connections from anywhere, but limit the
+# rest to just the private network.
+apt-get update -yq
+apt-get install -yq ufw
+ufw allow ssh
+ufw allow from 10.0.0.0/8
+ufw --force enable
+
+# http://docs.citusdata.com/en/v9.2/installation/multi_machine_debian.html#steps-to-be-executed-on-all-nodes
+
+# 1. Add repository
+curl https://install.citusdata.com/community/deb.sh | bash
+
+# 2. Install PostgreSQL + Citus and initialize a database
+
+# Install the server and initialize db:
+apt-get -y install postgresql-12-citus-9.2
+
+# Preload citus extension:
+pg_conftool 12 main set shared_preload_libraries citus
+
+# 3. Configure connection and authentication
+
+# Listen on all IP interfaces:
+pg_conftool 12 main set listen_addresses '*'
+
+# Allow incoming connections from the local network:
+cat >> /etc/postgresql/12/main/pg_hba.conf <<EOF
+# Allow unrestricted access to nodes in the local network. The following ranges
+# correspond to 24, 20, and 16-bit blocks in Private IPv4 address spaces.
+host    all             all             10.0.0.0/8              trust
+
+# Also allow the host unrestricted access to connect to itself
+host    all             all             127.0.0.1/32            trust
+host    all             all             ::1/128                 trust
+EOF
+
+# 4. Start database servers, create Citus extension
+
+# Start the db server:
+service postgresql restart
+update-rc.d postgresql enable
+
+# You must add the Citus extension to every database you would like to use in a
+# cluster. The following example adds the extension to the default database
+# which is named postgres.
+sudo -i -u postgres psql -c "CREATE EXTENSION citus;"
